@@ -1,5 +1,102 @@
 # Changelog
 
+## 0.31.2
+
+**Release date:** 2024-02-01
+
+This prerelease comes with an update to the Kubernetes dependencies to
+v1.28.6 and various other dependencies have been updated to their latest version
+to patch upstream CVEs.
+
+In addition, the controller is now built with Go 1.21.
+
+Improvements:
+- ci: Enable dependabot gomod updates
+  [#495](https://github.com/fluxcd/image-reflector-controller/pull/495)
+- Update Go to 1.21
+  [#493](https://github.com/fluxcd/image-reflector-controller/pull/493)
+- tests/int: Add separate resource cleanup step
+  [#489](https://github.com/fluxcd/image-reflector-controller/pull/489)
+- Various dependency updates
+  [#501](https://github.com/fluxcd/image-reflector-controller/pull/501)
+  [#499](https://github.com/fluxcd/image-reflector-controller/pull/499)
+  [#498](https://github.com/fluxcd/image-reflector-controller/pull/498)
+  [#496](https://github.com/fluxcd/image-reflector-controller/pull/496)
+  [#494](https://github.com/fluxcd/image-reflector-controller/pull/494)
+  [#492](https://github.com/fluxcd/image-reflector-controller/pull/492)
+  [#490](https://github.com/fluxcd/image-reflector-controller/pull/490)
+  [#484](https://github.com/fluxcd/image-reflector-controller/pull/484)
+  [#483](https://github.com/fluxcd/image-reflector-controller/pull/483)
+
+## 0.31.1
+
+**Release date:** 2023-12-11
+
+This prerelease comes with updates to AWS dependencies to fix an issue with ECR authentication.
+
+In addition, the container base image was updated to Alpine 3.19.
+
+Improvements:
+- build: update Alpine to 3.19
+  [#480](https://github.com/fluxcd/image-reflector-controller/pull/480)
+- Update dependencies
+  [#481](https://github.com/fluxcd/image-reflector-controller/pull/481)
+
+## 0.31.0
+
+**Release date:** 2023-12-08
+
+This prerelease comes with support for insecure HTTP registries using the
+new `.spec.insecure` field on `ImageRepository` objects. This field is
+optional and defaults to `false`.
+
+In addition, the Kubernetes dependencies have been updated to v1.28.4 in
+combination with an update of the controller's dependencies.
+
+Lastly, tiny improvements have been made to some of the error messages the
+controller emits.
+
+Improvements:
+- Address miscellaneous issues throughout code base
+  [#452](https://github.com/fluxcd/image-reflector-controller/pull/452)
+- Update dependencies to Kubernetes v1.28
+  [#471](https://github.com/fluxcd/image-reflector-controller/pull/471)
+- imagerepo: add `.spec.insecure` to `ImageRepository`
+  [#472](https://github.com/fluxcd/image-reflector-controller/pull/472)
+- Various dependency updates
+  [#453](https://github.com/fluxcd/image-reflector-controller/pull/453)
+  [#454](https://github.com/fluxcd/image-reflector-controller/pull/454)
+  [#455](https://github.com/fluxcd/image-reflector-controller/pull/455)
+  [#459](https://github.com/fluxcd/image-reflector-controller/pull/459)
+  [#460](https://github.com/fluxcd/image-reflector-controller/pull/460)
+  [#477](https://github.com/fluxcd/image-reflector-controller/pull/477)
+
+## 0.30.0
+
+**Release date:** 2023-08-23
+
+This prerelease adds support for Secrets of type 
+[`kubernetes.io/tls`](https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets) ImageRepositories'
+`.spec.certSecretRef`. Note: Support for the `caFile`, `certFile` and `keyFile` keys has
+been deprecated and will be removed in upcoming releases. After upgrading the controller to version 0.30.0, please
+change all Secrets referenced in `.spec.certSecretRef` to follow the new format.
+
+Starting with this version, the controller now stops exporting an object's metrics as soon as the object has been
+deleted.
+
+In addition, this version fixes handling of finalizers and updates the controller's dependencies.
+
+Improvements:
+
+- Update dependencies
+  [#441](https://github.com/fluxcd/image-reflector-controller/pull/431)
+- imagerepo: adopt Kubernetes style TLS secrets
+  [#434](https://github.com/fluxcd/image-reflector-controller/pull/434)
+- Delete stale metrics on object delete
+  [#430](https://github.com/fluxcd/image-reflector-controller/pull/430)
+- Update pkg/oci to support Azure China and US gov
+  [438](https://github.com/fluxcd/image-reflector-controller/pull/438)
+
 ## 0.29.1
 
 **Release date:** 2023-07-10

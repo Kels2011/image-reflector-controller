@@ -18,11 +18,17 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +40,7 @@ import (
 
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/conditions"
+	"github.com/fluxcd/pkg/runtime/patch"
 
 	imagev1 "github.com/fluxcd/image-reflector-controller/api/v1beta2"
 	"github.com/fluxcd/image-reflector-controller/internal/secret"
@@ -102,6 +109,7 @@ func TestImageRepositoryReconciler_setAuthOptions(t *testing.T) {
 	testImg := "example.com/foo/bar"
 	testSecretName := "test-secret"
 	testTLSSecretName := "test-tls-secret"
+	testDeprecatedTLSSecretName := "test-deprecated-tls-secret"
 	testServiceAccountName := "test-service-account"
 	testNamespace := "test-ns"
 
@@ -132,18 +140,27 @@ func TestImageRepositoryReconciler_setAuthOptions(t *testing.T) {
 	testTLSSecret.Namespace = testNamespace
 	testTLSSecret.Type = corev1.SecretTypeTLS
 	testTLSSecret.Data = map[string][]byte{
+		secret.CACrtKey:         rootCertPEM,
+		corev1.TLSCertKey:       clientCertPEM,
+		corev1.TLSPrivateKeyKey: clientKeyPEM,
+	}
+
+	testDeprecatedTLSSecret := &corev1.Secret{}
+	testDeprecatedTLSSecret.Name = testDeprecatedTLSSecretName
+	testDeprecatedTLSSecret.Namespace = testNamespace
+	testDeprecatedTLSSecret.Type = corev1.SecretTypeTLS
+	testDeprecatedTLSSecret.Data = map[string][]byte{
 		secret.CACert:     rootCertPEM,
 		secret.ClientCert: clientCertPEM,
 		secret.ClientKey:  clientKeyPEM,
 	}
 
-	// Secret with docker config and TLS secrets.
-	testSecretWithTLS := testSecret.DeepCopy()
-	testSecretWithTLS.Data = map[string][]byte{
-		".dockerconfigjson": dockerconfigjson,
-		secret.CACert:       rootCertPEM,
-		secret.ClientCert:   clientCertPEM,
-		secret.ClientKey:    clientKeyPEM,
+	// Docker config secret with TLS data.
+	testDockerCfgSecretWithTLS := testSecret.DeepCopy()
+	testDockerCfgSecretWithTLS.Data = map[string][]byte{
+		secret.CACrtKey:         rootCertPEM,
+		corev1.TLSCertKey:       clientCertPEM,
+		corev1.TLSPrivateKeyKey: clientKeyPEM,
 	}
 
 	// ServiceAccount without image pull secret.
@@ -212,6 +229,16 @@ func TestImageRepositoryReconciler_setAuthOptions(t *testing.T) {
 			},
 		},
 		{
+			name:     "cert secret ref with existing secret using deprecated keys",
+			mockObjs: []client.Object{testDeprecatedTLSSecret},
+			imageRepoSpec: imagev1.ImageRepositorySpec{
+				Image: testImg,
+				CertSecretRef: &meta.LocalObjectReference{
+					Name: testDeprecatedTLSSecretName,
+				},
+			},
+		},
+		{
 			name: "cert secret ref with non-existing secret",
 			imageRepoSpec: imagev1.ImageRepositorySpec{
 				Image: testImg,
@@ -235,17 +262,15 @@ func TestImageRepositoryReconciler_setAuthOptions(t *testing.T) {
 			},
 		},
 		{
-			name:     "same secret ref and cert secret ref",
-			mockObjs: []client.Object{testSecretWithTLS},
+			name:     "cert secret ref of type docker config",
+			mockObjs: []client.Object{testDockerCfgSecretWithTLS},
 			imageRepoSpec: imagev1.ImageRepositorySpec{
 				Image: testImg,
-				SecretRef: &meta.LocalObjectReference{
-					Name: testSecretName,
-				},
 				CertSecretRef: &meta.LocalObjectReference{
 					Name: testSecretName,
 				},
 			},
+			wantErr: true,
 		},
 		{
 			name:     "service account without pull secret",
@@ -562,7 +587,7 @@ func TestImageRepositoryReconciler_scan(t *testing.T) {
 				repo.SetAnnotations(map[string]string{meta.ReconcileRequestAnnotation: tt.annotation})
 			}
 
-			ref, err := parseImageReference(imgRepo)
+			ref, err := parseImageReference(imgRepo, false)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			opts := []remote.Option{}
@@ -638,12 +663,13 @@ func TestGetLatestTags(t *testing.T) {
 	}
 }
 
-func TestParseImageReference(t *testing.T) {
+func Test_parseImageReference(t *testing.T) {
 	tests := []struct {
-		name    string
-		url     string
-		wantErr bool
-		wantRef string
+		name     string
+		url      string
+		insecure bool
+		wantErr  bool
+		wantRef  string
 	}{
 		{
 			name:    "simple valid url",
@@ -666,16 +692,27 @@ func TestParseImageReference(t *testing.T) {
 			wantErr: false,
 			wantRef: "example.com:9999/foo/bar",
 		},
+		{
+			name:     "with insecure registry",
+			url:      "example.com/foo/bar",
+			insecure: true,
+			wantRef:  "example.com/foo/bar",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			ref, err := parseImageReference(tt.url)
-			g.Expect(err != nil).To(Equal(tt.wantErr))
-			if err == nil {
+			ref, err := parseImageReference(tt.url, tt.insecure)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(ref.String()).To(Equal(tt.wantRef))
+				if tt.insecure {
+					g.Expect(ref.Context().Registry.Scheme()).To(Equal("http"))
+				}
 			}
 		})
 	}
@@ -843,4 +880,83 @@ func TestNotify(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestImageRepositoryReconciler_TLS(t *testing.T) {
+	g := NewWithT(t)
+
+	// Run test registry server.
+	srv, rootCertPEM, clientCertPEM, clientKeyPEM, clientTLSCert, err := test.CreateTLSServer()
+	g.Expect(err).To(Not(HaveOccurred()))
+	srv.StartTLS()
+	defer srv.Close()
+
+	// Construct a test repository reference.
+	u, err := url.Parse(srv.URL)
+	g.Expect(err).ToNot(HaveOccurred())
+	repoURL := fmt.Sprintf("%s/foo", u.Host)
+	ref, err := name.ParseReference(repoURL)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Push a test image.
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	remoteOpts := []remote.Option{remote.WithTransport(&http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs:      pool,
+			Certificates: []tls.Certificate{clientTLSCert},
+		},
+	})}
+	img, err := random.Image(1024, 1)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(remote.Write(ref, img, remoteOpts...)).ToNot(HaveOccurred())
+	dst := ref.Context().Tag("v1.2.3")
+	desc, err := remote.Get(ref, remoteOpts...)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(remote.Tag(dst, desc, remoteOpts...))
+
+	// Construct cert secret.
+	testSecretName := "test-secret"
+	testNamespace := "test-ns" + randStringRunes(5)
+
+	testTLSSecret := &corev1.Secret{}
+	testTLSSecret.Name = testSecretName
+	testTLSSecret.Namespace = testNamespace
+	testTLSSecret.Type = corev1.SecretTypeTLS
+	testTLSSecret.Data = map[string][]byte{
+		secret.CACrtKey:         rootCertPEM,
+		corev1.TLSCertKey:       clientCertPEM,
+		corev1.TLSPrivateKeyKey: clientKeyPEM,
+	}
+
+	// Construct ImageRepository.
+	obj := &imagev1.ImageRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "repo-" + randStringRunes(5),
+			Namespace: testNamespace,
+		},
+		Spec: imagev1.ImageRepositorySpec{
+			Image: repoURL,
+			CertSecretRef: &meta.LocalObjectReference{
+				Name: testSecretName,
+			},
+		},
+	}
+
+	clientBuilder := fake.NewClientBuilder().
+		WithScheme(testEnv.GetScheme()).
+		WithObjects(testTLSSecret, obj).
+		WithStatusSubresource(&imagev1.ImageRepository{})
+
+	r := &ImageRepositoryReconciler{
+		EventRecorder: record.NewFakeRecorder(32),
+		Client:        clientBuilder.Build(),
+		patchOptions:  getPatchOptions(imageRepositoryOwnedConditions, "irc"),
+		Database:      &mockDatabase{},
+	}
+
+	sp := patch.NewSerialPatcher(obj, r.Client)
+	_, err = r.reconcile(ctx, sp, obj, time.Now())
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(conditions.IsReady(obj)).To(BeTrue())
 }

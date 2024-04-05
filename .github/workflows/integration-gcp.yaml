@@ -19,26 +19,26 @@ jobs:
         working-directory: ./tests/integration
     steps:
       - name: Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
       - name: Set up Go
-        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4.1.0
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: 1.20.x
+          go-version-file: 'tests/integration/go.mod'
           cache-dependency-path: tests/integration/go.sum
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@35b0e87d162680511bf346c299f71c9c5c379033 # v1.1.1
+        uses: google-github-actions/auth@55bd3a7c6e2ae7cf1877fd1ccb9d54c0503c457c # v2.1.2
         id: 'auth'
         with:
           credentials_json: '${{ secrets.IRC_E2E_GOOGLE_CREDENTIALS }}'
           token_format: 'access_token'
       - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@e30db14379863a8c79331b04a9969f4c1e225e0b # v1.1.1
+        uses: google-github-actions/setup-gcloud@98ddc00a17442e89a24bbf282954a3b65ce6d200 # v2.1.0
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@2b82ce82d56a2a04d2637cd93a637ae1b359c0a7 # v2.2.0
+        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4c0219f9ac95b02789c1075625400b2acbff50b1  # v2.9.1
+        uses: docker/setup-buildx-action@2b51285047da1547ffb1b2203d8be4c0af6b1f20  # v3.2.0
       - name: Cache Docker layers
-        uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
         id: cache
         with:
           path: /tmp/.buildx-cache
@@ -46,13 +46,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-ghcache-
       - name: Log into gcr.io
-        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc # v2.2.0
+        uses: docker/login-action@e92390c5fb421da1463c202d546fed0ec5c39f20 # v3.1.0
         with:
           registry: gcr.io
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
       - name: Log into us-central1-docker.pkg.dev
-        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc # v2.2.0
+        uses: docker/login-action@e92390c5fb421da1463c202d546fed0ec5c39f20 # v3.1.0
         with:
           registry: us-central1-docker.pkg.dev
           username: oauth2accesstoken
@@ -80,6 +80,13 @@ jobs:
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
       - name: Run tests
         run: . .env && make test-gcp TEST_IMG=fluxcd/image-reflector-controller:dev
+        env:
+          TF_VAR_gcp_project_id: ${{ vars.TF_VAR_gcp_project_id }}
+          TF_VAR_gcp_region: ${{ vars.TF_VAR_gcp_region }}
+          TF_VAR_gcp_zone: ${{ vars.TF_VAR_gcp_zone }}
+      - name: Ensure resource cleanup
+        if: ${{ always() }}
+        run: . .env && make destroy-gcp
         env:
           TF_VAR_gcp_project_id: ${{ vars.TF_VAR_gcp_project_id }}
           TF_VAR_gcp_region: ${{ vars.TF_VAR_gcp_region }}
